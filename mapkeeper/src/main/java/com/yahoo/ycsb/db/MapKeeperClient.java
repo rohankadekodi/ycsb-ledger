@@ -22,6 +22,7 @@ import java.util.HashMap;
 import java.util.Properties;
 import java.util.Set;
 import java.util.Vector;
+import java.util.Map;
 
 import org.apache.thrift.TException;
 import org.apache.thrift.protocol.TBinaryProtocol;
@@ -40,6 +41,7 @@ import com.yahoo.ycsb.ByteIterator;
 import com.yahoo.ycsb.DB;
 import com.yahoo.ycsb.StringByteIterator;
 import com.yahoo.ycsb.workloads.CoreWorkload;
+import com.yahoo.ycsb.Status;
 
 public class MapKeeperClient extends DB {
     private static final String HOST = "mapkeeper.host";
@@ -128,7 +130,7 @@ public class MapKeeperClient extends DB {
     }
 
     @Override
-    public int read(String table, String key, Set<String> fields,
+    public Status read(String table, String key, Set<String> fields,
             HashMap<String, ByteIterator> result) {
         try {
             ByteBuffer buf = bufStr(key);
@@ -142,16 +144,17 @@ public class MapKeeperClient extends DB {
 
             if(ret == 0) {
                 decode(fields, strResponse(succ), result);
+		return Status.OK;
             }
-            return ret;
+            return Status.ERROR;
         } catch(TException e) {
             e.printStackTrace();
-            return 2;
+            return Status.ERROR;
         }
     }
 
     @Override
-    public int scan(String table, String startkey, int recordcount,
+    public Status scan(String table, String startkey, int recordcount,
             Set<String> fields, Vector<HashMap<String, ByteIterator>> result) {
         try {
             //XXX what to pass in for nulls / zeros?
@@ -167,53 +170,58 @@ public class MapKeeperClient extends DB {
                     decode(fields, new String(r.getValue())/*strBuf(r.bufferForValue())*/, tuple);
                     result.add(tuple);
                 }
+		return Status.OK;
             }
-            return ret;
+            return Status.ERROR;
         } catch(TException e) {
             e.printStackTrace();
-            return 2;
+            return Status.ERROR;
         }
     }
 
     @Override
-    public int update(String table, String key,
+    public Status update(String table, String key,
             HashMap<String, ByteIterator> values) {
         try {
             if(!writeallfields) {
                 HashMap<String, ByteIterator> oldval = new HashMap<String, ByteIterator>();
                 read(table, key, null, oldval);
                 for(Map.Entry<String, ByteIterator> entry : values.entrySet()) {
-                    oldval.put(entry.getKey(), entry.getValue()));
+                    oldval.put(entry.getKey(), entry.getValue());
                 }
                 values = oldval;
             }
             ResponseCode succ = c.update(table, bufStr(key), encode(values));
-            return ycsbThriftRet(succ, ResponseCode.RecordExists, ResponseCode.RecordNotFound);
+            int ret = ycsbThriftRet(succ, ResponseCode.RecordExists, ResponseCode.RecordNotFound);
+	    if (ret == 0) {
+		return Status.OK;
+	    }
+	    return Status.ERROR;
         } catch(TException e) {
             e.printStackTrace();
-            return 2;
+            return Status.ERROR;
         }
     }
 
     @Override
-    public int insert(String table, String key,
+    public Status insert(String table, String key,
             HashMap<String, ByteIterator> values) {
         try {
             int ret = ycsbThriftRet(c.insert(table, bufStr(key), encode(values)), ResponseCode.Success, ResponseCode.RecordExists);
-            return ret;
+            return (ret == 0) ? Status.OK : Status.ERROR;
         } catch(TException e) {
             e.printStackTrace();
-            return 2;
+            return Status.ERROR;
         }
     }
 
     @Override
-    public int delete(String table, String key) {
+    public Status delete(String table, String key) {
         try {
-            return ycsbThriftRet(c.remove(table, bufStr(key)), ResponseCode.Success, ResponseCode.RecordExists);
+            return (ycsbThriftRet(c.remove(table, bufStr(key)), ResponseCode.Success, ResponseCode.RecordExists) == 0) ? Status.OK : Status.ERROR;
         } catch(TException e) {
             e.printStackTrace();
-            return 2;
+            return Status.ERROR;
         }
     }
 }

@@ -79,7 +79,7 @@ LICENSE file.
     <infinispan.version>7.2.2.Final</infinispan.version>
     <kudu.version>0.9.0</kudu.version>
     <openjpa.jdbc.version>2.1.1</openjpa.jdbc.version>
-    <!--<mapkeeper.version>1.0</mapkeeper.version>-->
+    <!-- <mapkeeper.version>1.0</mapkeeper.version> -->
     <mongodb.version>3.0.3</mongodb.version>
     <mongodb.async.version>2.0.1</mongodb.async.version>
     <orientdb.version>2.1.8</orientdb.version>
@@ -110,6 +110,7 @@ LICENSE file.
     <module>asynchbase</module>
     <module>azuretablestorage</module>
     <module>cassandra</module>
+    <module>hyperdex</module>
     <module>couchbase</module>
     <module>couchbase2</module>
     <module>distribution</module>
@@ -125,7 +126,7 @@ LICENSE file.
     <module>infinispan</module>
     <module>jdbc</module>
     <module>kudu</module>
-    <!--<module>mapkeeper</module>-->
+    <!-- <module>mapkeeper</module> -->
     <module>memcached</module>
     <module>mongodb</module>
     <module>nosqldb</module>
@@ -159,7 +160,7 @@ LICENSE file.
           <target>1.7</target>
         </configuration>
       </plugin>
-      <plugin>
+   <!--   <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-checkstyle-plugin</artifactId>
         <executions>
@@ -175,6 +176,7 @@ LICENSE file.
           </execution>
         </executions>
       </plugin>
+	-->
     </plugins>
   </build>
 </project>
