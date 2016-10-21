@@ -54,6 +54,18 @@ LICENSE file.
       <artifactId>arangodb-binding</artifactId>
       <version>${project.version}</version>
     </dependency>
+
+    <dependency>
+      <groupId>com.yahoo.ycsb</groupId>
+      <artifactId>hyperdex-binding</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.yahoo.ycsb</groupId>
+      <artifactId>tracerecorder-binding</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+
     <dependency>
       <groupId>com.yahoo.ycsb</groupId>
       <artifactId>asynchbase-binding</artifactId>
