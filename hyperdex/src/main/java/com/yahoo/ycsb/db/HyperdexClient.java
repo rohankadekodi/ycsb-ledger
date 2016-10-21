@@ -1,232 +1,312 @@
-/**                                                                                                                                                                                
- * Copyright (c) 2010 Yahoo! Inc. All rights reserved.                                                                                                                             
- *                                                                                                                                                                                 
- * Licensed under the Apache License, Version 2.0 (the "License"); you                                                                                                             
- * may not use this file except in compliance with the License. You                                                                                                                
- * may obtain a copy of the License at                                                                                                                                             
- *                                                                                                                                                                                 
- * http://www.apache.org/licenses/LICENSE-2.0                                                                                                                                      
- *                                                                                                                                                                                 
- * Unless required by applicable law or agreed to in writing, software                                                                                                             
- * distributed under the License is distributed on an "AS IS" BASIS,                                                                                                               
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or                                                                                                                 
- * implied. See the License for the specific language governing                                                                                                                    
- * permissions and limitations under the License. See accompanying                                                                                                                 
- * LICENSE file.                                                                                                                                                                   
+/**
+ * Copyright (c) 2011-2013, Cornell University
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ *     * Redistributions of source code must retain the above copyright notice,
+ *       this list of conditions and the following disclaimer.
+ *     * Redistributions in binary form must reproduce the above copyright
+ *       notice, this list of conditions and the following disclaimer in the
+ *       documentation and/or other materials provided with the distribution.
+ *     * Neither the name of HyperDex nor the names of its contributors may be
+ *       used to endorse or promote products derived from this software without
+ *       specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
+
+/* Descriptions borrowed from YCSB base. */
+
 package org.hyperdex.ycsb;
 
-import com.yahoo.ycsb.*;
-import java.io.*;
 import java.util.HashMap;
-import java.util.Properties;
+import java.util.Map;
 import java.util.Set;
-import java.util.Enumeration;
 import java.util.Vector;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.LockSupport;
+import java.util.AbstractMap;
+import java.util.regex.*;
 
-/**
- * Basic DB that just prints out the requested operations, instead of doing them against a database.
- */
-public class HyperdexClient extends DB {
-	public static final String VERBOSE="recorder.verbose";
-	public static final String VERBOSE_DEFAULT="false";
-	public static final String TRACEFILE="recorder.file";
-	public static final String TRACEFILE_DEFAULT=null;
-    	boolean verbose;
-	PrintWriter traceout;
-	BufferedWriter traceoutbuf;
+import com.yahoo.ycsb.DB;
+import com.yahoo.ycsb.DBException;
+import com.yahoo.ycsb.ByteIterator;
+import com.yahoo.ycsb.StringByteIterator;
+import com.yahoo.ycsb.Status;
 
-	public HyperdexClient() {}
+import org.hyperdex.client.ByteString;
+import org.hyperdex.client.Client;
+import org.hyperdex.client.HyperDexClientException;
+import org.hyperdex.client.Iterator;
 
-	/**
-	 * Initialize any state for this DB.
-	 * Called once per DB instance; there is one DB instance per client thread.
-	 */
-	@SuppressWarnings("unchecked")
-	public void init() {
-		verbose = Boolean.parseBoolean(getProperties().getProperty(VERBOSE, VERBOSE_DEFAULT));
-		String tracefile = getProperties().getProperty(TRACEFILE, TRACEFILE_DEFAULT);
-		try {
-			traceoutbuf = new BufferedWriter(new FileWriter(tracefile), 4096 * 1024);
-			traceout = new PrintWriter(traceoutbuf);
-		} catch (Exception e) {
-			e.printStackTrace();
-			System.exit(1);
-		}
-		if (verbose) {
-			System.out.println("***************** properties *****************");
-			System.out.println("tracefile = " + tracefile);
-			Properties p=getProperties();
-			if (p!=null) {
-				for (Enumeration e=p.propertyNames(); e.hasMoreElements(); ) {
-					String k=(String)e.nextElement();
-					System.out.println("\""+k+"\"=\""+p.getProperty(k)+"\"");
-				}
-			}
-			System.out.println("**********************************************");
-		}
-	}
+public class HyperdexClient extends DB
+{
+    private Client m_client;
+    private Pattern m_pat;
+    private Matcher m_mat;
+    private boolean m_scannable;
+    private int m_retries;
 
-	public void cleanup() {
-		try {
-			traceoutbuf.flush();
-		} catch (Exception e) {
-			e.printStackTrace();
-			System.exit(1);
-		}
-	}
+    /**
+     * Initialize any state for this DB.
+     * Called once per DB instance; there is one DB instance per client thread.
+     */
+    public void init() throws DBException
+    {
+	System.out.println("HypderDex init()\n");
+        String host = getProperties().getProperty("hyperdex.host", "128.83.143.34");
+        Integer port = Integer.parseInt(getProperties().getProperty("hyperdex.port", "1982"));
+        m_client = new Client(host, port);
+        m_pat = Pattern.compile("([a-zA-Z]*)([0-9]*)");
+        m_mat = m_pat.matcher("user1");
+        m_scannable = getProperties().getProperty("hyperdex.scannable", "false").equals("true");
+        m_retries = 10;
+	System.out.println("HypderDex init() complete. \n");
+    }
 
-	void writetrace(String s) {
-		try {
-			traceout.println(s);
-		} catch (Exception e) {
-			e.printStackTrace();
-			System.exit(1);
-		}
-	}
+    /**
+     * Cleanup any state for this DB.
+     * Called once per DB instance; there is one DB instance per client thread.
+     */
+    public void cleanup() throws DBException
+    {
+    }
 
-	/**
-	 * Read a record from the database. Each field/value pair from the result will be stored in a HashMap.
-	 *
-	 * @param table The name of the table
-	 * @param key The record key of the record to read.
-	 * @param fields The list of fields to read, or null for all of them
-	 * @param result A HashMap of field/value pairs for the result
-	 * @return Zero on success, a non-zero error code on error
-	 */
-	public Status read(String table, String key, Set<String> fields, HashMap<String,ByteIterator> result) {
-		if (verbose) {
-			System.out.print("READ "+table+" "+key+" [ ");
-			if (fields!=null) {
-				for (String f : fields) {
-					System.out.print(f+" ");
-				}
-			} else {
-				System.out.print("<all fields>");
-			}
+    /**
+     * Read a record from the database. Each field/value pair from the result will be stored in a HashMap.
+     *
+     * @param table The name of the table
+     * @param key The record key of the record to read.
+     * @param fields The list of fields to read, or null for all of them
+     * @param result A HashMap of field/value pairs for the result
+     * @return Zero on success, a non-zero error code on error or "not found".
+     */
+    public Status read(String table, String key, Set<String> fields, HashMap<String,ByteIterator> result)
+    {
+        while (true)
+        {
+            Map map = new HashMap<String,Object>();
 
-			System.out.println("]");
-		}
-		assert table.equals("usertable");
-		assert fields == null;
-		assert key.startsWith("user");
-		writetrace("r " + key.substring(4));
-		return Status.OK;
-	}
-	
-	/**
-	 * Perform a range scan for a set of records in the database. Each field/value pair from the result will be stored in a HashMap.
-	 *
-	 * @param table The name of the table
-	 * @param startkey The record key of the first record to read.
-	 * @param recordcount The number of records to read
-	 * @param fields The list of fields to read, or null for all of them
-	 * @param result A Vector of HashMaps, where each HashMap is a set field/value pairs for one record
-	 * @return Zero on success, a non-zero error code on error
-	 */
-	public Status scan(String table, String startkey, int recordcount, Set<String> fields, Vector<HashMap<String,ByteIterator>> result)
-	{
-		if (verbose) {
-			System.out.print("SCAN "+table+" "+startkey+" "+recordcount+" [ ");
-			if (fields!=null) {
-				for (String f : fields)	{
-					System.out.print(f+" ");
-				}
-			} else {
-				System.out.print("<all fields>");
-			}
+            try
+            {
+                map = m_client.get(table, key);
+            }
+            catch(HyperDexClientException e)
+            {
+                if (e.status() == 8517)
+                {
+                    continue;
+                }
 
-			System.out.println("]");
-		}
+                return Status.ERROR;
+            }
+            catch(Exception e)
+            {
+                return Status.ERROR;
+            }
 
-		assert table.equals("usertable");
-		assert fields == null;
-		assert startkey.startsWith("user");
-		writetrace("s " + startkey.substring(4) + " " + recordcount);
+            convert_to_java(fields, map, result);
+            return Status.OK;
+        }
+    }
 
-		return Status.OK;
-	}
+    /**
+     * Perform a range scan for a set of records in the database. Each field/value pair from the result will be stored in a HashMap.
+     *
+     * @param table The name of the table
+     * @param startkey The record key of the first record to read.
+     * @param recordcount The number of records to read
+     * @param fields The list of fields to read, or null for all of them
+     * @param result A Vector of HashMaps, where each HashMap is a set field/value pairs for one record
+     * @return Zero on success, a non-zero error code on error.  See this class's description for a discussion of error codes.
+     */
+    public Status scan(String table, String startkey, int recordcount, Set<String> fields, Vector<HashMap<String,ByteIterator>> result)
+    {
+        while (true)
+        {
+            // XXX I'm going to be lazy and not support "fields" for now.  Patches
+            // welcome.
 
-	private int maplen(HashMap<String,ByteIterator> values) {
-		int result = 0;
-		for (String k : values.keySet()) {
-			result += k.length() + values.get(k).bytesLeft();
-		}
-		return result;
-	}
+            if (!m_scannable)
+            {
+                return Status.ERROR;
+            }
 
-	/**
-	 * Update a record in the database. Any field/value pairs in the specified values HashMap will be written into the record with the specified
-	 * record key, overwriting any existing values with the same field name.
-	 *
-	 * @param table The name of the table
-	 * @param key The record key of the record to write.
-	 * @param values A HashMap of field/value pairs to update in the record
-	 * @return Zero on success, a non-zero error code on error
-	 */
-	public Status update(String table, String key, HashMap<String,ByteIterator> values) {
-		if (verbose) {
-			System.out.print("UPDATE "+table+" "+key+" [ ");
-			if (values!=null) {
-				for (String k : values.keySet()) {
-					System.out.print(k+"="+values.get(k)+" ");
-				}
-			}
-			System.out.println("]");
-		}
+            m_mat.reset(startkey);
 
-		assert table.equals("usertable");
-		assert key.startsWith("user");
-		writetrace("u " + key.substring(4) + " " + maplen(values));
-		return Status.OK;
-	}
+            if (!m_mat.matches())
+            {
+                return Status.ERROR;
+            }
 
-	/**
-	 * Insert a record in the database. Any field/value pairs in the specified values HashMap will be written into the record with the specified
-	 * record key.
-	 *
-	 * @param table The name of the table
-	 * @param key The record key of the record to insert.
-	 * @param values A HashMap of field/value pairs to insert in the record
-	 * @return Zero on success, a non-zero error code on error
-	 */
-	public Status insert(String table, String key, HashMap<String,ByteIterator> values) {
-		if (verbose) {
-			System.out.print("INSERT "+table+" "+key+" [ ");
-			if (values!=null) {
-				for (String k : values.keySet()) {
-					System.out.print(k+"="+values.get(k)+" ");
-				}
-			}
+            long base = Long.parseLong(m_mat.group(2));
+            long lower = base << 32;
+            long upper = (base + recordcount) << 32;
 
-			System.out.println("]");
-		}
+            HashMap<String,Object> values = new HashMap<String,Object>();
+            AbstractMap.SimpleEntry<Long,Long> range
+                = new AbstractMap.SimpleEntry<Long,Long>(lower,upper);
+            values.put("recno", range);
 
-		assert table.equals("usertable");
-		assert key.startsWith("user");
-		writetrace("i " + key.substring(4) + " " + maplen(values));
-		return Status.OK;
-	}
+            try
+            {
+                Iterator s = m_client.search(table, values);
 
+                while (s.hasNext())
+                {
+                    s.next();
+                }
 
-	/**
-	 * Delete a record from the database. 
-	 *
-	 * @param table The name of the table
-	 * @param key The record key of the record to delete.
-	 * @return Zero on success, a non-zero error code on error
-	 */
-	public Status delete(String table, String key) {
-		if (verbose) {
-			System.out.println("DELETE "+table+" "+key);
-		}
+                return Status.OK;
+            }
+            catch(HyperDexClientException e)
+            {
+                if (e.status() == 8517)
+                {
+                    continue;
+                }
 
-		assert table.equals("usertable");
-		assert key.startsWith("user");
-		writetrace("d " + key.substring(4));
+                return Status.ERROR;
+            }
+            catch(Exception e)
+            {
+                return Status.ERROR;
+            }
+        }
+    }
 
-		return Status.OK;
-	}
+    /**
+     * Update a record in the database. Any field/value pairs in the specified values HashMap will be written into the record with the specified
+     * record key, overwriting any existing values with the same field name.
+     *
+     * @param table The name of the table
+     * @param key The record key of the record to write.
+     * @param values A HashMap of field/value pairs to update in the record
+     * @return Zero on success, a non-zero error code on error.  See this class's description for a discussion of error codes.
+     */
+    public Status update(String table, String key, HashMap<String,ByteIterator> _values)
+    {
+	System.out.println("HyperDex update() called. \n");
+        while (true)
+        {
+            HashMap<String,Object> values = new HashMap<String,Object>();
+
+            for (Map.Entry<String, ByteIterator> entry : _values.entrySet())
+            {
+                values.put(entry.getKey(), new ByteString(entry.getValue().toArray()));
+            }
+
+            if (m_scannable)
+            {
+                m_mat.reset(key);
+
+                if (!m_mat.matches())
+                {
+		    System.out.println("m_mat doesn't match. \n");
+                    return Status.ERROR;
+                }
+
+                long num = Long.parseLong(m_mat.group(2));
+                values.put("recno", new Long(num << 32));
+            }
+
+            try
+            {
+		System.out.println("Calling client.put\n");
+                m_client.put(table, key, values);
+                return Status.OK;
+            }
+            catch(HyperDexClientException e)
+            {
+		e.printStackTrace();
+                if (e.status() == 8517)
+                {
+                    continue;
+                }
+
+                return Status.ERROR;
+            }
+            catch(Exception e)
+            {
+		e.printStackTrace();
+                System.err.println(e.toString());
+                return Status.ERROR;
+            }
+        }
+    }
+
+    /**
+     * Insert a record in the database. Any field/value pairs in the specified values HashMap will be written into the record with the specified
+     * record key.
+     *
+     * @param table The name of the table
+     * @param key The record key of the record to insert.
+     * @param values A HashMap of field/value pairs to insert in the record
+     * @return Zero on success, a non-zero error code on error.  See this class's description for a discussion of error codes.
+     */
+    public Status insert(String table, String key, HashMap<String,ByteIterator> values)
+    {
+	System.out.println("HypderDex insert() called. \n");
+        return update(table, key, values);
+    }
+
+    /**
+     * Delete a record from the database.
+     *
+     * @param table The name of the table
+     * @param key The record key of the record to delete.
+     * @return Zero on success, a non-zero error code on error.  See this class's description for a discussion of error codes.
+     */
+    public Status delete(String table, String key)
+    {
+        while (true)
+        {
+            try
+            {
+                m_client.del(table, key);
+                return Status.OK;
+            }
+            catch(HyperDexClientException e)
+            {
+                if (e.status() == 8517)
+                {
+                    continue;
+                }
+
+                return Status.ERROR;
+            }
+            catch(Exception e)
+            {
+                return Status.ERROR;
+            }
+        }
+    }
+
+    private void convert_to_java(Set<String> fields, Map interres, HashMap<String,ByteIterator> result)
+    {
+        if (fields == null)
+        {
+            return;
+        }
+
+        for (String key : fields)
+        {
+            // Q: under which condition, interres.containsKey(key) is false?
+            if (interres.containsKey(key))
+            {
+                result.put(key, new StringByteIterator(interres.get(key).toString()));
+            }
+        }
+    }
 }
+
