@@ -82,7 +82,7 @@ public class HyperdexClient extends DB
 		System.out.println("HyperDex is set to be scannable.");
 	}
 	count = 0; 
-	print_every = 250000; 
+	print_every = 100000; 
     }
 
     /**
@@ -154,6 +154,8 @@ public class HyperdexClient extends DB
     public Status scan(String table, String startkey, int recordcount, Set<String> fields, Vector<HashMap<String,ByteIterator>> result)
     {
 	updateCount();
+	recordcount = recordcount * 150; 
+//	System.out.println("table: " + table + " startKey: " + startkey + " recordcount: " + recordcount);
 
         while (true)
         {
@@ -178,21 +180,25 @@ public class HyperdexClient extends DB
             long lower = base << 32;
             long upper = (base + recordcount) << 32;
 
-//	    System.out.println("base: " + base + " lower: " + lower + " upper: " + upper + " recordcount: " + recordcount);
+//	    System.out.println("count: " + count + " base: " + base + " lower: " + lower + " upper: " + upper + " recordcount: " + recordcount);
 
             HashMap<String,Object> values = new HashMap<String,Object>();
             AbstractMap.SimpleEntry<Long,Long> range
                 = new AbstractMap.SimpleEntry<Long,Long>(lower,upper);
 //            values.put("recno", range);
-	    values.put("recno", new GreaterEqual(lower)); 
+//	    values.put("recno", new GreaterEqual(lower)); 
 //	    values.put("recno", new LessThan(upper));
-//	    values.put("recno", new Range(lower, upper)); 
+	    values.put("recno", new Range(lower, upper)); 
 
 	    //System.out.println("values: " + values.toString());
 	    
+	    // Hack to temporarily test with just one next
+//	    recordcount = 2;
+
             try
             {
                 Iterator s = m_client.search(table, values);
+//		Iterator s = m_client.sorted_search(table, values, "recno", recordcount, false);
 		int cnt = 1;
 
                 while (s.hasNext() &&  cnt < recordcount)
@@ -201,13 +207,13 @@ public class HyperdexClient extends DB
 		    cnt++;
                 }
 
-//		System.out.println("Number of values scanned: " + cnt);
+//		System.out.println("lower: " + lower + " upper: " + upper + " Number of values scanned: " + cnt);
                 return Status.OK;
             }
             catch(HyperDexClientException e)
             {
-//		System.out.println("HyperDexClientException: ");
-//		e.printStackTrace();
+		//System.out.println("HyperDexClientException: ");
+		//e.printStackTrace();
 
                 if (e.status() == 8517)
                 {
@@ -238,6 +244,7 @@ public class HyperdexClient extends DB
 	updateCount();
 
 //	System.out.println("HyperDex update() called. \n");
+	//System.out.println("Update: table: " + table + " key: " + key);
         while (true)
         {
             HashMap<String,Object> values = new HashMap<String,Object>();
@@ -258,9 +265,14 @@ public class HyperdexClient extends DB
                 }
 
                 long num = Long.parseLong(m_mat.group(2));
+	//	System.out.println("num: " + num + " recno: " + new Long(num << 32));
                 values.put("recno", new Long(num << 32));
             }
 
+//	    System.out.println("-------------------------- table: " + table + " key: " + key + " values: -------------------------");
+//	    for (String k: values.keySet()) {
+//	    	System.out.println(k + ": " + values.get(k).toString());
+//	    }
             try
             {
 //		System.out.println("Calling client.put\n");
