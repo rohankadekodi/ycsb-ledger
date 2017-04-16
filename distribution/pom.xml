@@ -26,7 +26,7 @@ LICENSE file.
 
   <artifactId>ycsb</artifactId>
   <name>YCSB Release Distribution Builder</name>
-  <packaging>pom</packaging>
+  <packaging>jar</packaging>
 
   <description>
     This module creates the release package of the YCSB with all DB library bindings.
