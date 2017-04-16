@@ -24,14 +24,8 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.text.DecimalFormat;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.Enumeration;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.Map.Entry;
-import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.LockSupport;
@@ -403,6 +397,7 @@ class ClientThread implements Runnable
     _measurements = Measurements.getMeasurements();
     _spinSleep = Boolean.valueOf(_props.getProperty("spin.sleep", "false"));
     _completeLatch=completeLatch;
+    _threadid = new Random().nextInt();
   }
 
   public int getOpsDone()
