@@ -590,7 +590,7 @@ public class CoreWorkload extends Workload {
     Status status;
     int numOfRetries = 0;
     do {
-      System.out.println("CoreWorkload doInsert: threadId: " + threadstate + ", key: " + dbkey);
+      //System.out.println("CoreWorkload doInsert: threadId: " + threadstate + ", key: " + dbkey);
       status = db.insert(table, dbkey, values);
       if (null != status && status.isOk()) {
         break;
