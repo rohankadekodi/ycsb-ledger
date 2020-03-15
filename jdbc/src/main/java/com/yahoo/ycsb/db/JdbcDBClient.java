@@ -39,7 +39,7 @@ import com.yahoo.ycsb.db.flavors.DBFlavor;
  *
  * <br>
  * This interface expects a schema <key> <field1> <field2> <field3> ... All
- * attributes are of type VARCHAR. All accesses are through the primary key.
+ * attributes are of type TEXT. All accesses are through the primary key.
  * Therefore, only one index on the primary key is needed.
  */
 public class JdbcDBClient extends DB {
@@ -48,7 +48,8 @@ public class JdbcDBClient extends DB {
   public static final String DRIVER_CLASS = "db.driver";
 
   /** The URL to connect to the database. */
-  public static final String CONNECTION_URL = "db.url";
+  public static final String CONNECTION_URL = "jdbc:sqlite:/mnt/pmem_emul/ycsb?journal_mode=WAL";
+  //public static final String CONNECTION_URL = "jdbc:sqlite:/mnt/pmem_emul/ycsb";
 
   /** The user name to use to connect to the database. */
   public static final String CONNECTION_USER = "db.user";
@@ -82,7 +83,7 @@ public class JdbcDBClient extends DB {
   /** The field name prefix in the table. */
   public static final String COLUMN_PREFIX = "FIELD";
 
-  private ArrayList<Connection> conns;
+  private List<Connection> conns;
   private boolean initialized = false;
   private Properties props;
   private int jdbcFetchSize;
@@ -150,6 +151,7 @@ public class JdbcDBClient extends DB {
 
   /** Returns parsed int value from the properties if set, otherwise returns -1. */
   private static int getIntProperty(Properties props, String key) throws DBException {
+    /*   
     String valueStr = props.getProperty(key);
     if (valueStr != null) {
       try {
@@ -159,15 +161,18 @@ public class JdbcDBClient extends DB {
         throw new DBException(nfe);
       }
     }
+    */
     return -1;
   }
 
   /** Returns parsed boolean value from the properties if set, otherwise returns defaultVal. */
   private static boolean getBoolProperty(Properties props, String key, boolean defaultVal) {
+    /*
     String valueStr = props.getProperty(key);
     if (valueStr != null) {
       return Boolean.parseBoolean(valueStr);
     }
+    */
     return defaultVal;
   }
 
@@ -177,11 +182,7 @@ public class JdbcDBClient extends DB {
       System.err.println("Client connection already initialized.");
       return;
     }
-    props = getProperties();
-    String urls = props.getProperty(CONNECTION_URL, DEFAULT_PROP);
-    String user = props.getProperty(CONNECTION_USER, DEFAULT_PROP);
-    String passwd = props.getProperty(CONNECTION_PASSWD, DEFAULT_PROP);
-    String driver = props.getProperty(DRIVER_CLASS);
+    String urls = CONNECTION_URL;
 
     this.jdbcFetchSize = getIntProperty(props, JDBC_FETCH_SIZE);
     this.batchSize = getIntProperty(props, DB_BATCH_SIZE);
@@ -190,15 +191,12 @@ public class JdbcDBClient extends DB {
     this.batchUpdates = getBoolProperty(props, JDBC_BATCH_UPDATES, false);
 
     try {
-      if (driver != null) {
-        Class.forName(driver);
-      }
       int shardCount = 0;
       conns = new ArrayList<Connection>(3);
       final String[] urlArr = urls.split(",");
       for (String url : urlArr) {
         System.out.println("Adding shard node URL: " + url);
-        Connection conn = DriverManager.getConnection(url, user, passwd);
+        Connection conn = DriverManager.getConnection(url);
 
         // Since there is no explicit commit method in the DB interface, all
         // operations should auto commit, except when explicitly told not to
@@ -215,9 +213,6 @@ public class JdbcDBClient extends DB {
       cachedStatements = new ConcurrentHashMap<StatementType, PreparedStatement>();
 
       this.dbFlavor = DBFlavor.fromJdbcUrl(urlArr[0]);
-    } catch (ClassNotFoundException e) {
-      System.err.println("Error in initializing the JDBS driver: " + e);
-      throw new DBException(e);
     } catch (SQLException e) {
       System.err.println("Error in database operation: " + e);
       throw new DBException(e);
@@ -421,7 +416,8 @@ public class JdbcDBClient extends DB {
           if (++numRowsInBatch % batchSize == 0) {
             int[] results = insertStatement.executeBatch();
             for (int r : results) {
-              if (r != 1) {
+              // Acceptable values are 1 and SUCCESS_NO_INFO (-2) from reWriteBatchedInserts=true
+              if (r != 1 && r != -2) { 
                 return Status.ERROR;
               }
             }
@@ -483,7 +479,7 @@ public class JdbcDBClient extends DB {
     }
   }
 
-  private OrderedFieldInfo getFieldInfo(HashMap<String, ByteIterator> values) {
+  private OrderedFieldInfo getFieldInfo(Map<String, ByteIterator> values) {
     String fieldKeys = "";
     List<String> fieldValues = new ArrayList<>();
     int count = 0;

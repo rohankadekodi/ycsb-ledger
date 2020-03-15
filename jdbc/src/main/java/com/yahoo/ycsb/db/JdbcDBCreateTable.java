@@ -16,14 +16,10 @@
  */
 package com.yahoo.ycsb.db;
 
-import java.io.FileInputStream;
-import java.io.IOException;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.util.Enumeration;
-import java.util.Properties;
 
 /**
  * Utility class to create the table to be used by the benchmark.
@@ -34,59 +30,50 @@ public final class JdbcDBCreateTable {
 
   private static void usageMessage() {
     System.out.println("Create Table Client. Options:");
-    System.out.println("  -p   key=value properties defined.");
-    System.out.println("  -P   location of the properties file to load.");
     System.out.println("  -n   name of the table.");
     System.out.println("  -f   number of fields (default 10).");
   }
 
-  private static void createTable(Properties props, String tablename) throws SQLException {
-    String driver = props.getProperty(JdbcDBClient.DRIVER_CLASS);
-    String username = props.getProperty(JdbcDBClient.CONNECTION_USER);
-    String password = props.getProperty(JdbcDBClient.CONNECTION_PASSWD, "");
-    String url = props.getProperty(JdbcDBClient.CONNECTION_URL);
-    int fieldcount = Integer.parseInt(props.getProperty(JdbcDBClient.FIELD_COUNT_PROPERTY,
-        JdbcDBClient.FIELD_COUNT_PROPERTY_DEFAULT));
-
-    if (driver == null || username == null || url == null) {
+  private static void createTable(String tablename) throws SQLException {
+    String url = "jdbc:sqlite:/mnt/pmem_emul/ycsb?journal_mode=WAL";
+    //String url = "jdbc:sqlite:/mnt/pmem_emul/ycsb";
+    //int fieldcount = Integer.parseInt(JdbcDBClient.FIELD_COUNT_PROPERTY_DEFAULT);
+    int fieldcount = 10;
+    
+    if (url == null) {
       throw new SQLException("Missing connection information.");
     }
 
     Connection conn = null;
 
-    try {
-      Class.forName(driver);
+    conn = DriverManager.getConnection(url);
+    Statement stmt = conn.createStatement();
 
-      conn = DriverManager.getConnection(url, username, password);
-      Statement stmt = conn.createStatement();
+    StringBuilder sql = new StringBuilder("DROP TABLE IF EXISTS ");
+    sql.append(tablename);
+    sql.append(";");
 
-      StringBuilder sql = new StringBuilder("DROP TABLE IF EXISTS ");
-      sql.append(tablename);
-      sql.append(";");
+    stmt.execute(sql.toString());
 
-      stmt.execute(sql.toString());
+    sql = new StringBuilder("CREATE TABLE ");
+    sql.append(tablename);
+    sql.append(" (YCSB_KEY VARCHAR PRIMARY KEY");
 
-      sql = new StringBuilder("CREATE TABLE ");
-      sql.append(tablename);
-      sql.append(" (YCSB_KEY VARCHAR PRIMARY KEY");
+    for (int idx = 0; idx < fieldcount; idx++) {
+      sql.append(", FIELD");
+      sql.append(idx);
+      sql.append(" TEXT");
+    }
 
-      for (int idx = 0; idx < fieldcount; idx++) {
-        sql.append(", FIELD");
-        sql.append(idx);
-        sql.append(" VARCHAR");
-      }
-      sql.append(");");
+    sql.append(");");
 
-      stmt.execute(sql.toString());
+    stmt.execute(sql.toString());
 
-      System.out.println("Table " + tablename + " created..");
-    } catch (ClassNotFoundException e) {
-      throw new SQLException("JDBC Driver class not found.");
-    } finally {
-      if (conn != null) {
-        System.out.println("Closing database connection.");
-        conn.close();
-      }
+    System.out.println("Table " + tablename + " created..");
+
+    if (conn != null) {
+      System.out.println("Closing database connection.");
+      conn.close();
     }
   }
 
@@ -102,54 +89,11 @@ public final class JdbcDBCreateTable {
 
     String tablename = null;
     int fieldcount = -1;
-    Properties props = new Properties();
-    Properties fileprops = new Properties();
 
     // parse arguments
     int argindex = 0;
     while (args[argindex].startsWith("-")) {
-      if (args[argindex].compareTo("-P") == 0) {
-        argindex++;
-        if (argindex >= args.length) {
-          usageMessage();
-          System.exit(0);
-        }
-        String propfile = args[argindex];
-        argindex++;
-
-        Properties myfileprops = new Properties();
-        try {
-          myfileprops.load(new FileInputStream(propfile));
-        } catch (IOException e) {
-          System.out.println(e.getMessage());
-          System.exit(0);
-        }
-
-        // Issue #5 - remove call to stringPropertyNames to make compilable
-        // under Java 1.5
-        for (Enumeration<?> e = myfileprops.propertyNames(); e.hasMoreElements();) {
-          String prop = (String) e.nextElement();
-
-          fileprops.setProperty(prop, myfileprops.getProperty(prop));
-        }
-
-      } else if (args[argindex].compareTo("-p") == 0) {
-        argindex++;
-        if (argindex >= args.length) {
-          usageMessage();
-          System.exit(0);
-        }
-        int eq = args[argindex].indexOf('=');
-        if (eq < 0) {
-          usageMessage();
-          System.exit(0);
-        }
-
-        String name = args[argindex].substring(0, eq);
-        String value = args[argindex].substring(eq + 1);
-        props.put(name, value);
-        argindex++;
-      } else if (args[argindex].compareTo("-n") == 0) {
+      if (args[argindex].compareTo("-n") == 0) {
         argindex++;
         if (argindex >= args.length) {
           usageMessage();
@@ -185,18 +129,6 @@ public final class JdbcDBCreateTable {
       System.exit(0);
     }
 
-    // overwrite file properties with properties from the command line
-
-    // Issue #5 - remove call to stringPropertyNames to make compilable under
-    // Java 1.5
-    for (Enumeration<?> e = props.propertyNames(); e.hasMoreElements();) {
-      String prop = (String) e.nextElement();
-
-      fileprops.setProperty(prop, props.getProperty(prop));
-    }
-
-    props = fileprops;
-
     if (tablename == null) {
       System.err.println("table name missing.");
       usageMessage();
@@ -204,11 +136,12 @@ public final class JdbcDBCreateTable {
     }
 
     if (fieldcount > 0) {
-      props.setProperty(JdbcDBClient.FIELD_COUNT_PROPERTY, String.valueOf(fieldcount));
+      //fieldcount = Integer.parseInt(JdbcDBClient.FIELD_COUNT_PROPERTY_DEFAULT);
+      fieldcount = 10;
     }
 
     try {
-      createTable(props, tablename);
+      createTable(tablename);
     } catch (SQLException e) {
       System.err.println("Error in creating table. " + e);
       System.exit(1);
